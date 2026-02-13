@@ -3,6 +3,7 @@ import time
 import uuid
 import threading
 import yt_dlp
+import tempfile
 from flask import Flask, request, jsonify, send_file, after_this_request
 from flask_cors import CORS
 
@@ -58,6 +59,20 @@ def download_worker(job_id, url, format_id):
             },
             'nocheckcertificate': True,
         }
+        
+        # Helper to handle cookies from Env
+        cookie_file = None
+        cookies_content = os.environ.get('COOKIES_CONTENT')
+        if cookies_content:
+            # Create a named temp file for cookies.txt
+            # We use delete=False so we can close it and let yt-dlp open it by name
+            # We'll try to clean it up later or rely on OS temp cleaning
+            tf = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+            tf.write(cookies_content)
+            tf.close()
+            cookie_file = tf.name
+            ydl_opts['cookiefile'] = cookie_file
+
         # Better yet:
         ydl_opts['ffmpeg_location'] = ffmpeg_path
 
@@ -75,7 +90,16 @@ def download_worker(job_id, url, format_id):
         print(f"Job {job_id} failed: {e}")
 
     # Schedule cleanup of job metadata
-    threading.Thread(target=cleanup_job, args=(job_id,), daemon=True).start()
+    # Schedule cleanup of job metadata
+    def background_cleanup():
+        cleanup_job(job_id)
+        if 'cookie_file' in locals() and cookie_file and os.path.exists(cookie_file):
+             try:
+                 os.remove(cookie_file)
+             except:
+                 pass
+
+    threading.Thread(target=background_cleanup, daemon=True).start()
 
 @app.route('/api/video-info', methods=['POST'])
 def get_video_info():
@@ -86,8 +110,26 @@ def get_video_info():
 
     try:
         ydl_opts = {'quiet': True, 'no_warnings': True}
+        
+        # Helper to handle cookies from Env (Duplicated logic, ideally refactor to function)
+        cookie_file = None
+        cookies_content = os.environ.get('COOKIES_CONTENT')
+        if cookies_content:
+            tf = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+            tf.write(cookies_content)
+            tf.close()
+            cookie_file = tf.name
+            ydl_opts['cookiefile'] = cookie_file
+            
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            
+            # Cleanup cookie file immediately after extraction
+            if cookie_file and os.path.exists(cookie_file):
+                try:
+                    os.remove(cookie_file)
+                except:
+                    pass
             
             formats = []
             # Simplified format processing for frontend compatibility
