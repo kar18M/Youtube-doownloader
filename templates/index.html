@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Video Downloader</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="search-section">
+            <h1>YouTube Downloader</h1>
+            <div class="input-group">
+                <input type="text" id="videoUrl" placeholder="Paste YouTube link here..." autocomplete="off">
+                <button id="searchBtn" onclick="getVideoInfo()">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+            <p id="statusMessage" class="status-message"></p>
+        </div>
+
+        <div id="resultSection" class="result-section" style="display: none;">
+            <div class="video-card">
+                <div class="thumbnail-container">
+                    <img id="videoThumb" src="" alt="Video Thumbnail">
+                </div>
+                <div class="video-details">
+                    <h2 id="videoTitle">Video Title</h2>
+                    <p id="videoAuthor" class="author">Channel Name</p>
+                    <p id="videoViews" class="views">0 views</p>
+                </div>
+            </div>
+
+            <div id="downloadsGrid" class="downloads-grid">
+                <!-- Download options will be injected here -->
+            </div>
+        </div>
+
+        <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <p id="loadingText">Processing...</p>
+        </div>
+    </div>
+
+    <script>
+        async function getVideoInfo() {
+            const urlInput = document.getElementById('videoUrl');
+            const statusMsg = document.getElementById('statusMessage');
+            const resultSection = document.getElementById('resultSection');
+            const downloadsGrid = document.getElementById('downloadsGrid');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+
+            const url = urlInput.value.trim();
+            if (!url) {
+                statusMsg.textContent = "Please enter a valid YouTube URL.";
+                return;
+            }
+
+            statusMsg.textContent = "";
+            loadingText.textContent = "Fetching video info...";
+            loadingOverlay.style.display = 'flex';
+            resultSection.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/video-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to fetch video info');
+                }
+
+                const data = await response.json();
+                displayResults(data, url);
+
+            } catch (error) {
+                statusMsg.textContent = `Error: ${error.message}`;
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        function displayResults(data, url) {
+            document.getElementById('videoThumb').src = data.thumbnail_url;
+            document.getElementById('videoTitle').textContent = data.title;
+            document.getElementById('videoAuthor').textContent = data.author;
+            // Removed views as it's not strictly in the user's specific card reference in the image, 
+            // but keeping it in the data is fine. The user image shows just title/author/channel.
+            // Actually, the user image shows 'shreyastrings' which is channel. 'Cover' is part of title.
+            // We'll keep the views hidden or styling minimal if we want to match exactly.
+
+            const downloadsGrid = document.getElementById('downloadsGrid');
+            downloadsGrid.innerHTML = '';
+
+            data.streams.forEach(stream => {
+                const card = document.createElement('div');
+                card.className = 'download-card';
+
+                const isAudio = stream.type === 'audio';
+                const iconClass = isAudio ? 'fa-music' : 'fa-video';
+
+                // Parse resolution and extra info from our backend string "1080p (Video Only)"
+                // We want: Title = "1080p (Video Only)", Sub = "Video/Mp4"
+
+                let titleText = stream.resolution;
+
+                // Format: Video/Mp4 or Audio/Webm
+                let formatText = stream.mime_type.split('/')[1].charAt(0).toUpperCase() + stream.mime_type.split('/')[1].slice(1); // Mp4
+                let typeText = isAudio ? 'Audio' : 'Video';
+
+                // Calculate size in MB
+                let sizeMB = '0 MB';
+                if (stream.filesize_approx) {
+                    sizeMB = (stream.filesize_approx / (1024 * 1024)).toFixed(1) + ' MB';
+                }
+
+                let subText = `${typeText}/${formatText} • ${sizeMB}`;
+
+                card.innerHTML = `
+                    <div class="format-icon">
+                        <i class="fas ${iconClass}"></i>
+                    </div>
+                    <div class="format-info">
+                        <span class="quality">${titleText}</span>
+                        <span class="meta">${subText}</span>
+                    </div>
+                    <button class="download-btn" onclick="downloadVideo('${url}', ${stream.itag}, '${stream.type}')">
+                        <i class="fas fa-download"></i>
+                    </button>
+                `;
+                downloadsGrid.appendChild(card);
+            });
+
+            document.getElementById('resultSection').style.display = 'block';
+        }
+
+        async function downloadVideo(url, itag, type) {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+
+            loadingText.textContent = type === 'adaptive'
+                ? "Downloading & Merging (this may take a while)..."
+                : "Downloading...";
+            loadingOverlay.style.display = 'flex';
+
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, itag: itag, type: type })
+                });
+
+                if (!response.ok) {
+                    const errorRaw = await response.text();
+                    // try parse json
+                    try {
+                        const error = JSON.parse(errorRaw);
+                        throw new Error(error.error || 'Download failed');
+                    } catch (e) {
+                        throw new Error(`Download failed: ${response.statusText}`);
+                    }
+                }
+
+                // Trigger file download from blob
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+
+                // Content-Disposition header extraction for filename
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let fileName = 'download';
+                if (contentDisposition) {
+                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                    const matches = filenameRegex.exec(contentDisposition);
+                    if (matches != null && matches[1]) {
+                        fileName = matches[1].replace(/['"]/g, '');
+                    }
+                }
+                // Fallback extension if needed
+                if (!fileName.includes('.')) {
+                    fileName += (type === 'audio' ? '.mp3' : '.mp4');
+                }
+
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+
+            } catch (error) {
+                alert(`Error downloading: ${error.message}`);
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+
+</html>
