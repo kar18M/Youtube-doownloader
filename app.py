@@ -116,7 +116,13 @@ def get_video_info():
         return jsonify({'error': 'No URL provided'}), 400
 
     try:
-        ydl_opts = {'quiet': True, 'no_warnings': True}
+        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+        ydl_opts = {
+            'quiet': True, 
+            'no_warnings': True,
+            'format': 'best', # Force single file to avoid merge checks during metadata fetch
+            'ffmpeg_location': ffmpeg_path
+        }
         
         # Helper to handle cookies from Env (Duplicated logic, ideally refactor to function)
         cookie_file = None
