@@ -5,6 +5,7 @@ import { StreamOptionCard } from '../components/StreamOptionCard';
 import { ProgressModal } from '../components/ProgressModal';
 import type { VideoMeta, StreamOption } from '../types';
 import { motion } from 'framer-motion';
+import { API_URL } from '../config';
 
 export const Home: React.FC = () => {
     const [data, setData] = useState<VideoMeta | null>(null);
@@ -15,7 +16,8 @@ export const Home: React.FC = () => {
     const [filename, setFilename] = useState("video.mp4");
 
     const [currentUrl, setCurrentUrl] = useState('');
-    const API_URL = '/api';
+
+
 
     const handleSearch = async (url: string) => {
         setLoading(true);

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, CheckCircle } from 'lucide-react';
+import { API_URL } from '../config';
 
 interface ProgressModalProps {
     isOpen: boolean;
@@ -13,7 +14,8 @@ export const ProgressModal: React.FC<ProgressModalProps & { jobId: string | null
     const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
     // Use environment variable if set, otherwise fallback to the known working backend
-    const API_URL = import.meta.env.VITE_API_URL || 'https://youtube-downloader-1-6e7a.onrender.com/api';
+
+
 
     useEffect(() => {
         if (isOpen && jobId) {
