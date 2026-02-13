@@ -43,8 +43,15 @@ def download_worker(job_id, url, format_id):
     try:
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
         # Configure yt-dlp
+        # Construct format string
+        if format_id in ['best', 'bestaudio/best']:
+            fmt = format_id
+        else:
+             # It's a specific video format ID, try to merge with best audio, fall back to best
+             fmt = f"{format_id}+bestaudio/best"
+
         ydl_opts = {
-            'format': f"{format_id}+bestaudio/best" if format_id != 'best' else 'best',
+            'format': fmt,
             'outtmpl': os.path.join(DOWNLOAD_FOLDER, f'%(title)s_{job_id}.%(ext)s'),
             'progress_hooks': [lambda d: progress_hook(d, job_id)],
             'quiet': True,
